@@ -1,0 +1,24 @@
+{
+  "name": "bitnode",
+  "version": "0.0.1",
+  "description": "A command-line script to buy and sell bitcoins and try to get free money :)",
+  "repository": {
+    "type": "git",
+    "url": "none"
+  },
+  "author": "Pipe Martina",
+  "license": "ISC",
+  "bin": {
+    "bitnode": "./index.js"
+  },
+  "dependencies": {
+    "co": "4.6.0",
+    "co-prompt": "1.0.0",
+    "commander": "2.9.0",
+    "gauss": "^0.2.12",
+    "moving-average": "^0.1.1",
+    "request": "2.69.0",
+    "uphold-sdk-node": "^2.2.2",
+    "winston": "2.1.1"
+  }
+}
