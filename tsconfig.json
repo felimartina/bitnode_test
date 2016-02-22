@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "module": "commonjs"
+    },
+    "files": [
+        "index.js",
+        "uphold_driver.js",
+        "broker.js"
+    ]
+}
