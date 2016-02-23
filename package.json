@@ -16,6 +16,8 @@
     "co-prompt": "1.0.0",
     "commander": "2.9.0",
     "gauss": "^0.2.12",
+    "mongodb": "1.4.40",
+    "monk": "1.0.1",
     "moving-average": "^0.1.1",
     "request": "2.69.0",
     "uphold-sdk-node": "^2.2.2",
