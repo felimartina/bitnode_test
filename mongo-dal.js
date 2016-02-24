@@ -10,12 +10,21 @@ var ticks_dal = {
         tick.timestamp = Date.now();
         ticks_collection.insert(tick, function (err, doc) {
             if (err) {
-                logger.error('Cannot store current tick. err: %s tick: %s', err, tick);
+                logger.error('Cannot store current tick. err: %s tick:', err, tick);
             }
             if (callback) callback(doc);
         });
     },
 
+    add_stat: function (tick_id, stat, callback) {
+        ticks_collection.update(tick_id, { $push: { stats: stat } }, function (err) {
+            if (err) {
+                logger.error('Cannot add stat for tick "%s". err: %s', tick_id, err);
+            }
+            if (callback) callback();
+        });
+    }, 
+    
     read_last_ticks: function (ticks_to_read, callback) {
         var filter_options = {
             limit: ticks_to_read,
@@ -38,7 +47,7 @@ var stats_dal = {
         stat._id = new ObjectID();
         stats_collection.insert(stat, function (err, doc) {
             if (err) {
-                logger.error('Cannot store current stat. err: %s stat: %s', err, stat);
+                logger.error('Cannot store current stat. err: %s stat: ', err, stat);
             }
             if (callback) callback(doc);
         });
@@ -55,7 +64,7 @@ var stats_dal = {
             }
             if (callback) callback(docs);
         });
-    };
+    }
 };
 
 module.exports = {

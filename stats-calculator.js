@@ -1,16 +1,16 @@
 var logger = require('./logger');
 var constants = require('./constants');
 var gauss = require('gauss');
-var mongo_dal = require('./mongo-dal'); 
+var mongo_dal = require('./mongo-dal');
 
 var calculate_stat = function (stat, callback) {
-    mongo_dal.ticks_dal.read_last_ticks(stat.ticks_to_use,function (docs) {
-        if (docs.length === 0) return;
+    mongo_dal.ticks_dal.read_last_ticks(stat.ticks_to_use, function (docs) {
+        //Don't calculate stat if we don't have enough ticks, otherwise data would be innacurate
+        if (docs.length < stat.ticks_to_use) return;
         var avg_price_array = docs.map(function (tick) {
             return tick.price_avg;
         });
         avg_price_array = avg_price_array.toVector();
-        stat.tick_id = docs[0]._id;
         switch (stat.name) {
             case constants.enums.stat.STDEV:
                 stat.value = avg_price_array.stdev();
@@ -43,10 +43,10 @@ var calculate_stat = function (stat, callback) {
  * @param {tick} tick - tick to calculate stats upon
  * @param {[tick]} tick_history - history of ticks
  *  */
-var calculate_stats = function (stats_definitions, callback) {
+var calculate_stats = function (tick_id, stats_definitions, callback) {
     stats_definitions.forEach(function (element) {
         calculate_stat(element, function (stat) {
-            mongo_dal.stats_dal.insert(stat);
+            mongo_dal.ticks_dal.add_stat(tick_id, stat);
         });
     }, this);
 };
