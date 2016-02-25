@@ -3,52 +3,57 @@ var constants = require('./constants');
 var gauss = require('gauss');
 var mongo_dal = require('./mongo-dal');
 
+var find_stat_in_stat_array = function (stats, stat_name) {
+    return stats.find(function (element, index, array) {
+        return element.name === stat_name;
+    });
+};
+
 var calculate_historical_stat = function (stat, callback) {
     mongo_dal.ticks_dal.read_last_ticks(stat.ticks_to_use, function (docs) {
         //Don't calculate stat if we don't have enough ticks, otherwise data would be innacurate
         if (docs.length < stat.ticks_to_use) return;
-        var avg_price_array = [];
+        var variables_to_evaluate_array = [];
         //find stat to evaluate for each tick and add it to  
-        docs.forEach(function (tick) {
-            var found_stat = tick.stats.find(function (element, index, array) {
-                return element.name === stat.variable;
-            });
-            
+        for (var i = 0; i < docs.length; i++) {
+            var tick = docs[i];
+            var found_stat = find_stat_in_stat_array(tick.stats, stat.variable);
+
             if (found_stat && found_stat.value) {
-                avg_price_array.push(found_stat.value);
+                variables_to_evaluate_array.push(found_stat.value);
             } else {
                 stat.error = 'Unable calculate stat because variable is not present on all previous ticks';
                 logger.error(stat.error);
                 callback(stat);
                 return;
             }
-        }, this);
-        
-        avg_price_array = avg_price_array.toVector();
+        }
+
+        variables_to_evaluate_array = variables_to_evaluate_array.toVector();
         switch (stat.name) {
-            case constants.enums.stat.STDEV:
-                stat.value = avg_price_array.stdev();
+            case constants.enums.stats.STDEV:
+                stat.value = variables_to_evaluate_array.stdev();
                 break;
-            case constants.enums.stat.VAR:
-                stat.value = avg_price_array.variance();
+            case constants.enums.stats.VAR:
+                stat.value = variables_to_evaluate_array.variance();
                 break;
-            case constants.enums.stat.SMA:
-                stat.value = avg_price_array.sma(stat.ticks_to_use)[0];
+            case constants.enums.stats.SMA:
+                stat.value = variables_to_evaluate_array.sma(stat.ticks_to_use)[0];
                 break;
-            case constants.enums.stat.EMA:
-                stat.value = avg_price_array.ema(stat.ticks_to_use)[0];
+            case constants.enums.stats.EMA:
+                stat.value = variables_to_evaluate_array.ema(stat.ticks_to_use)[0];
                 break;
-            case constants.enums.stat.MIN:
-                stat.value = avg_price_array.min();
+            case constants.enums.stats.MIN:
+                stat.value = variables_to_evaluate_array.min();
                 break;
-            case constants.enums.stat.MAX:
-                stat.value = avg_price_array.max();
+            case constants.enums.stats.MAX:
+                stat.value = variables_to_evaluate_array.max();
                 break;
             default:
                 logger.error('Unsupported historical stat: %s', stat.name);
                 break;
         }
-        callback(stat);
+        if (callback) callback(stat);
     });
 };
     
@@ -57,36 +62,37 @@ var calculate_historical_stat = function (stat, callback) {
  * @param {tick} tick - tick to calculate stats upon
  * @param {[tick]} tick_history - history of ticks
  *  */
-var calculate_historical_stats = function (tick_id, stats_definitions, callback) {
-    stats_definitions.forEach(function (element) {
-        calculate_historical_stat(element, function (stat) {
-            mongo_dal.ticks_dal.add_stat(tick_id, stat);
+var calculate_historical_stats = function (tick_id, stats_definitions) {
+    stats_definitions.forEach(function(stat) {
+        calculate_historical_stat(stat, function (calculated_stat) {
+            mongo_dal.ticks_dal.add_stat(tick_id, calculated_stat);
         });
     }, this);
 };
 
 var calculate_single_stats = function (tick, stats_definitions, callback) {
-    stats_definitions.forEach(function (stat) {
-        switch (stat.name) {
-            case constants.enums.stat.ASK:
-                stat.value = parseFloat(tick.ask);
+    var calculated_stats = [];
+    for (var i = 0; i < stats_definitions.length; i++) {
+        var stat_name = stats_definitions[i].name;
+        switch (stat_name) {
+            case constants.enums.stats.ASK:
+                calculated_stats.push({ name: stat_name, value: parseFloat(tick.ask) });
                 break;
-            case constants.enums.stat.BID:
-                stat.value = parseFloat(tick.bid);
+            case constants.enums.stats.BID:
+                calculated_stats.push({ name: stat_name, value: parseFloat(tick.bid) });
                 break;
-            case constants.enums.stat.PRICE_AVG:
-                stat.value = (tick.bid + tick.ask) / 2;
+            case constants.enums.stats.PRICE_AVG:
+                calculated_stats.push({ name: stat_name, value: (parseFloat(tick.bid) + parseFloat(tick.ask)) / 2 });
                 break;
-            case constants.enums.stat.RANGE:
-                stat.value = tick.ask - tick.bid;
+            case constants.enums.stats.RANGE:
+                calculated_stats.push({ name: stat_name, value: parseFloat(tick.ask) - parseFloat(tick.bid) });
                 break;
-                
             default:
-                logger.error('Unsupported single stat: %s', stat.name);
+                logger.error('Unsupported single stat: %s', stat_name);
                 break;
         }
-    }, this);
-    return stats_definitions;
+    }
+    return calculated_stats;
 };
 
 module.exports = {
