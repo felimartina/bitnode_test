@@ -10,6 +10,7 @@ var find_stat_in_stat_array = function (stats, stat_name) {
 };
 
 var calculate_historical_stat = function (stat, callback) {
+    //TODO - Only take last X ticks older than current tick
     mongo_dal.ticks_dal.read_last_ticks(stat.ticks_to_use, function (docs) {
         //Don't calculate stat if we don't have enough ticks, otherwise data would be innacurate
         if (docs.length < stat.ticks_to_use) return;
