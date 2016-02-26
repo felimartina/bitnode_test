@@ -8,10 +8,10 @@ var tick = function (bit_driver, stats_definition, historical_stats_definitions,
         current_tick.stats = stats.calculate_single_stats(current_tick, stats_definition);
         mongo_dal.ticks_dal.insert(current_tick, function (){
             // calculate historical stats for the this tick
-            stats.calculate_historical_stats(current_tick._id, historical_stats_definitions);
+            stats.calculate_historical_stats(current_tick, historical_stats_definitions);
         });
 
-        logger.info('price avg: %s (ask: %s - bid: %s)', current_tick.price_avg, current_tick.ask, current_tick.bid);
+        logger.info('ask: %s - bid: %s', current_tick.ask, current_tick.bid);
         if (callback) callback(current_tick);
     });
 };
