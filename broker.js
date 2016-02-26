@@ -4,7 +4,10 @@ var logger = require('./logger');
 var uphold = require('uphold-sdk-node')(uphold_config);
 // var MA = require('moving-average');
 var gauss = require('gauss');
-var Collection = gauss.Collection;
+var mongo = require('mongodb');
+var monk = require('monk');
+var db = monk('localhost:27017/bitnode_test');
+
 // var transactions = [];
 // var tick_pace = 10000;
 // var step = 0.1; // min amount of dollar to consider a win
@@ -14,9 +17,6 @@ var Collection = gauss.Collection;
 // var profit_overall = 0, profit_last = 0;
 
 module.exports = function (user, pass) {
-    //Enumerations
-    var enum_currencies = Object.freeze({ USDBTC: 'USDBTC', BTCUSD: 'BTCUSD' });
-    var enum_running_mode = Object.freeze({ BUY_BITCOINS: 'BUY_BITCOINS', SELL_BITCOINS: 'SELL_BITCOINS' });
     var running_settings = {
         running_mode: enum_running_mode.SELL_BITCOINS,
         tick_miliseconds: 10000,
@@ -33,7 +33,7 @@ module.exports = function (user, pass) {
         running_settings.step = running_settings.step || settings.step;
         running_settings.number_of_ticks_to_use = running_settings.number_of_ticks_to_use || settings.number_of_ticks_to_use;
 
-        login(function () {
+        login(uphold, function () {
             switch (running_settings.running_mode) {
                 case enum_running_mode.BUY_BITCOINS:
                     buy();
@@ -50,8 +50,8 @@ module.exports = function (user, pass) {
     }
     
     //login into uphold
-    var login = function (next) {
-        uphold.createPAT(user, pass, 'Logging from broker', false, function (err, res) {
+    var login = function (bit_driver, callback) {
+        bit_driver.createPAT(user, pass, 'Logging from broker', false, function (err, res) {
             if (err) return logger.error(err);
             // if two factor authentication is enabled on the account a One Time Password (OTP) will be required
             // once retrieved this method can be called again with the OTP like so
@@ -59,10 +59,10 @@ module.exports = function (user, pass) {
             if (res.otp) return logger.error('getOTP()');
 
             // add the PAT to the current uphold-sdk-node configs pat property and make authenticated calls
-            uphold.addPAT(res.accessToken).user(function (err, user) {
+            bit_driver.addPAT(res.accessToken).user(function (err, user) {
                 if (err) return logger.error(err);
                 cards = user.cards;
-                next();
+                callback();
             });
         });
     };
@@ -77,11 +77,18 @@ module.exports = function (user, pass) {
         uphold.tickersForCurrency(enum_currencies.BTCUSD, function (err, current_tick) {
             if (!err) {
                 //parse tick values
-                current_tick.bid = parseFloat(current_tick.bid);
-                current_tick.ask = parseFloat(current_tick.ask);
                 current_tick.timestamp = Date.now();
+                current_tick.bid = parseFloat(current_tick.bid);
+                current_tick.ask = current_tick.ask - current_tick.bid;
+                current_tick.range = parseFloat(current_tick.ask);
                 current_tick = calculate_stats(current_tick, tick_history);
                 current_tick.last_tick = tick_history[tick_history.length - 1];
+                var tick_collection = db.get('ticks');
+                tick_collection.insert(current_tick, function (err, doc) {
+                    if (err) {
+                        logger.error('Cannot store current tick.');
+                    }
+                });
                 tick_history.push(current_tick);
 
                 logger.info('running_mode: %s - price avg: %s, stdev: %s, sma: %s, ema %s', running_settings.running_mode, current_tick.price_avg, current_tick.stats.stdev, current_tick.stats.sma, current_tick.stats.ema);
@@ -143,78 +150,78 @@ module.exports = function (user, pass) {
         });
     };
     
-/**
- *  Calculates stats for a given tick based upon previous ticks 
- * @param {tick} tick - tick to calculate stats upon
- * @param {[tick]} tick_history - history of ticks */
-var calculate_stats = function (tick, tick_history) {
-    // var greater_straight = 0, less_straight = 0;
-    //         tick.difference_overall = tick.bid - tick_history[0].bid;
-    //         tick.difference_tick = tick.bid - tick_history[tick_history.length - 1].bid;
-    // 
-    //         if (tick.bid >= highest_tick) {
-    //             tick.was_highest = true;
-    //             highest_tick = tick.bid;
-    //         } else if (tick.bid <= lowest_tick) {
-    //             tick.was_lowest = true;
-    //             lowest_tick = tick.bid;
-    //         }
-    //determine if last N were the highest/lowest
-    // for (var i = tick_history.length - 2, j = 0; j < running_settings.number_of_ticks_to_use && i >= 0; i-- , j++) {
-    //     if (tick_history[i].difference_tick > 0) {
-    //         greater_straight++;
-    //         //stop the for when we break the less_straight
-    //         if (less_straight > 0) {
-    //             break;
-    //         }
-    //     } else if (tick_history[i].difference_tick < 0) {
-    //         less_straight++;
-    //         //stop the for when we break the greater_straight
-    //         if (greater_straight > 0) {
-    //             break;
-    //         }
-    //     }
-    // }
+    /**
+     *  Calculates stats for a given tick based upon previous ticks 
+     * @param {tick} tick - tick to calculate stats upon
+     * @param {[tick]} tick_history - history of ticks */
+    var calculate_stats = function (tick, tick_history) {
+        // var greater_straight = 0, less_straight = 0;
+        //         tick.difference_overall = tick.bid - tick_history[0].bid;
+        //         tick.difference_tick = tick.bid - tick_history[tick_history.length - 1].bid;
+        // 
+        //         if (tick.bid >= highest_tick) {
+        //             tick.was_highest = true;
+        //             highest_tick = tick.bid;
+        //         } else if (tick.bid <= lowest_tick) {
+        //             tick.was_lowest = true;
+        //             lowest_tick = tick.bid;
+        //         }
+        //determine if last N were the highest/lowest
+        // for (var i = tick_history.length - 2, j = 0; j < running_settings.number_of_ticks_to_use && i >= 0; i-- , j++) {
+        //     if (tick_history[i].difference_tick > 0) {
+        //         greater_straight++;
+        //         //stop the for when we break the less_straight
+        //         if (less_straight > 0) {
+        //             break;
+        //         }
+        //     } else if (tick_history[i].difference_tick < 0) {
+        //         less_straight++;
+        //         //stop the for when we break the greater_straight
+        //         if (greater_straight > 0) {
+        //             break;
+        //         }
+        //     }
+        // }
         
-    //Calculate Simple Moving Average
-    // ma.push(Date.now(), tick.bid);
-    // tick.SMA = ma.movingAverage();
-    // tick.VA = ma.variance();
+        //Calculate Simple Moving Average
+        // ma.push(Date.now(), tick.bid);
+        // tick.SMA = ma.movingAverage();
+        // tick.VA = ma.variance();
         
-    tick.price_avg = (tick.bid + tick.ask) / 2;
-    // var bid_array = [tick.bid], ask_array = [tick.ask];
-    var price_array = [tick.price_avg];
-    for (var i = tick_history.length - 1, j = 0; j < running_settings.number_of_ticks_to_use && i >= 0; i-- , j++) {
-        price_array.push(tick_history[i].price_avg);
-        // bid_array.push(tick_history[i].bid);
-        // ask_array.push(tick_history[i].ask);
-    }
-    //Calculate Exponential Moving Average
-    // bid_array = bid_array.toVector();
-    // tick.bid_SMA = bid_array.sma(running_settings.number_of_ticks_to_use)[0];
-    // tick.bid_EMA = bid_array.ema(running_settings.number_of_ticks_to_use)[0];
-    // bid_array.
-    // ask_array = ask_array.toVector();
-    // tick.ask_SMA = ask_array.sma(running_settings.number_of_ticks_to_use)[0];
-    // tick.ask_EMA = ask_array.ema(running_settings.number_of_ticks_to_use)[0];
-    price_array = price_array.toVector();
-    tick.stats = {
-        sma: price_array.sma(running_settings.number_of_ticks_to_use)[0],
-        ema: price_array.ema(running_settings.number_of_ticks_to_use)[0],
-        stdev: price_array.stdev(),
-        min: price_array.min(),
-        max: price_array.max()
+        tick.price_avg = (tick.bid + tick.ask) / 2;
+        // var bid_array = [tick.bid], ask_array = [tick.ask];
+        var price_array = [tick.price_avg];
+        for (var i = tick_history.length - 1, j = 0; j < running_settings.number_of_ticks_to_use && i >= 0; i-- , j++) {
+            price_array.push(tick_history[i].price_avg);
+            // bid_array.push(tick_history[i].bid);
+            // ask_array.push(tick_history[i].ask);
+        }
+        //Calculate Exponential Moving Average
+        // bid_array = bid_array.toVector();
+        // tick.bid_SMA = bid_array.sma(running_settings.number_of_ticks_to_use)[0];
+        // tick.bid_EMA = bid_array.ema(running_settings.number_of_ticks_to_use)[0];
+        // bid_array.
+        // ask_array = ask_array.toVector();
+        // tick.ask_SMA = ask_array.sma(running_settings.number_of_ticks_to_use)[0];
+        // tick.ask_EMA = ask_array.ema(running_settings.number_of_ticks_to_use)[0];
+        price_array = price_array.toVector();
+        tick.stats = {
+            sma: price_array.sma(running_settings.number_of_ticks_to_use)[0],
+            ema: price_array.ema(running_settings.number_of_ticks_to_use)[0],
+            stdev: price_array.stdev(),
+            min: price_array.min(),
+            max: price_array.max()
+        };
+        
+        // tick.greater_straight = greater_straight;
+        // tick.less_straight = less_straight;
+        return tick;
     };
-        
-    // tick.greater_straight = greater_straight;
-    // tick.less_straight = less_straight;
-    return tick;
-};
 
-return {
-    run: run,
-    enum_running_mode: enum_running_mode
-};
+    return {
+        run: run,
+        enum_running_mode: enum_running_mode
+    };
 };
 // decide: function () {
 //     uphold.tick(uphold.enum_currencies.BTCUSD, function (current_tick) {
