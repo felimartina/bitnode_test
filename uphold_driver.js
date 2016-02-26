@@ -1,11 +1,11 @@
-var uphold_config = { "host": "api.uphold.com" };
+var uphold_config = { "host": "api-sandbox.uphold.com" };
 var uphold = require('uphold-sdk-node')(uphold_config);
 var logger = require('./logger');
 var constants = require('./constants');
 
 var init = function (user, pass, callback) {
     //login into uphold
-    uphold.createPAT(user, pass, 'Logging from broker', false, function (err, res) {
+    uphold.createPAT(user, pass, 'Logging from broker', true, function (err, res) {
         if (err) return logger.error(err);
         // if two factor authentication is enabled on the account a One Time Password (OTP) will be required
         // once retrieved this method can be called again with the OTP like so

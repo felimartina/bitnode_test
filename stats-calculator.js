@@ -9,9 +9,8 @@ var find_stat_in_stat_array = function (stats, stat_name) {
     });
 };
 
-var calculate_historical_stat = function (stat, callback) {
-    //TODO - Only take last X ticks older than current tick
-    mongo_dal.ticks_dal.read_last_ticks(stat.ticks_to_use, function (docs) {
+var calculate_historical_stat = function (tick, stat, callback) {
+    mongo_dal.ticks_dal.read_last_ticks(tick.timestamp, stat.ticks_to_use, stat.ticks_offset, function (docs) {
         //Don't calculate stat if we don't have enough ticks, otherwise data would be innacurate
         if (docs.length < stat.ticks_to_use) return;
         var variables_to_evaluate_array = [];
@@ -20,7 +19,7 @@ var calculate_historical_stat = function (stat, callback) {
             var tick = docs[i];
             var found_stat = find_stat_in_stat_array(tick.stats, stat.variable);
 
-            if (found_stat && found_stat.value) {
+            if (found_stat && found_stat.value >= 0) {
                 variables_to_evaluate_array.push(found_stat.value);
             } else {
                 stat.error = 'Unable calculate stat because variable is not present on all previous ticks';
@@ -61,12 +60,12 @@ var calculate_historical_stat = function (stat, callback) {
 /**
  *  Calculates stats for a given tick based upon previous ticks 
  * @param {tick} tick - tick to calculate stats upon
- * @param {[tick]} tick_history - history of ticks
+ * @param {[tick]} stats_defitions - historical stats to calculate
  *  */
-var calculate_historical_stats = function (tick_id, stats_definitions) {
+var calculate_historical_stats = function (tick, stats_definitions) {
     stats_definitions.forEach(function(stat) {
-        calculate_historical_stat(stat, function (calculated_stat) {
-            mongo_dal.ticks_dal.add_stat(tick_id, calculated_stat);
+        calculate_historical_stat(tick, stat, function (calculated_stat) {
+            mongo_dal.ticks_dal.add_stat(tick._id, calculated_stat);
         });
     }, this);
 };

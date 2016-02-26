@@ -25,14 +25,34 @@ var ticks_dal = {
         });
     }, 
     
-    read_last_ticks: function (ticks_to_read, callback) {
+    read_last_ticks: function (timestamp, ticks_to_read, skip, callback) {
         var filter_options = {
             limit: ticks_to_read,
-            sort: [['timestamp', 'desc']]
+            sort: [['timestamp', 'desc']],
+            skip: skip
         };
-        ticks_collection.find({}, filter_options, function (err, docs) {
+        var filter = {
+            timestamp: {'$lt': timestamp}
+        };
+        ticks_collection.find(filter, filter_options, function (err, docs) {
             if (err) {
                 logger.error('Cannot read ticks. err: %s', err);
+            }
+            if (callback) callback(docs);
+        });
+    },
+    
+    get_last_valid_stat: function (stat_id, callback){
+        var filter = [
+            { '$sort': { 'timestamp': -1 } },
+            { '$unwind': '$stats' },
+            { '$match': { 'stats.id': stat_id, 'stats.value': { '$exists': true } } },
+            { '$project': { 'name': '$stats.name', 'value': '$stats.value', 'variable': '$stats.variable' } },
+            { '$limit': 1}
+        ];
+        ticks_collection.aggregation(filter, {}, function (err, docs) {
+            if (err) {
+                logger.error('Cannot read stat. err: %s', err);
             }
             if (callback) callback(docs);
         });
