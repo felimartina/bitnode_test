@@ -1,4 +1,5 @@
 module.exports = {
     user: '',
-    pass: ''
+    pass: '',
+    mongo_server: ''
 };
