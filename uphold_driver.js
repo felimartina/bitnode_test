@@ -1,4 +1,5 @@
-var uphold_config = { "host": "api-sandbox.uphold.com" };
+var uphold_config = { "host": "api.uphold.com" };
+// var uphold_config = { "host": "api-sandbox.uphold.com" };
 var uphold = require('uphold-sdk-node')(uphold_config);
 var logger = require('./logger');
 var constants = require('./constants');
