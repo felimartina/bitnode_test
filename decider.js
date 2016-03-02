@@ -4,9 +4,9 @@ var mongo_dal = require('./mongo-dal');
 var async = require('async');
 var utils = require('./utils');
 
-var decide = function (buy_conditions) {
+var decide = function (conditions, callback) {
     var all_conditions_true = false;
-    async.forEachOf(buy_conditions, function (condition, key, callback) {
+    async.forEachOf(conditions, function (condition, key, callback) {
         async.parallel({
             variable1: function (callback) {
                 get_variable_value(condition.variable1, callback);
@@ -18,64 +18,30 @@ var decide = function (buy_conditions) {
             function (err, results) {
                 if (err) {
                     all_conditions_true = false;
-                    callback(err);
+                    return callback(err);
                 }
 
                 switch (condition.comparison) {
                     case constants.enums.decision_condition_operands.GREATER:
                         all_conditions_true = results.variable1 > results.variable2;
-                        callback();
-                        break;
+                        return callback();
 
                     case constants.enums.decision_condition_operands.LESS:
                         all_conditions_true = results.variable1 < results.variable2;
-                        callback();
-                        break;
+                        return callback();
 
                     case constants.enums.decision_condition_operands.EQUAL:
                         all_conditions_true = results.variable1 === results.variable2;
-                        callback();
-                        break;
+                        return callback();
 
                     default:
                         all_conditions_true = false;
-                        logger.error(new Error('Unsupported comparison method.'));
-                        callback();
+                        return callback(new Error('Unsupported comparison method.'));
                 }
             });
     }, function (err) {
-        if (err) logger.error(err);
-        if (all_conditions_true)
-            logger.info('were all conditions true??? do something');
+        callback(all_conditions_true);
     });
-    
-    // var eval_conditions = buy_conditions.map(function (condition) {
-    //     return new Promise(function (resolve, reject) {
-    //         if (eval_stat_condition(condition)) {
-    //             resolve();
-    //         } else {
-    //         }
-    //     });
-    // });
-    // Promise.all(eval_conditions).then(logger.info('ALL DECISIONS MET'));
-    
-    //     var satisfies_all = false;
-    //     for (var i = 0; i < conditions.length; conditions++) {
-    //         var condition = conditions[i];
-    //         switch (condition.type) {
-    //             case constants.decision_condition_types.STAT:
-    //                 satisfies_all = eval_stat_condition(condition);
-    //                 break;
-    // 
-    //             case constants.decision_condition_types.TRANSACTION:
-    //                 satisfies_all = something;
-    //                 break;
-    // 
-    //             default:
-    //                 logger.error('Unsupported condition type: %s', condition.type);
-    //                 break;
-    //         }
-    //     }
 };
 // 
 // var eval_condition = function (condition, callback) {
@@ -89,19 +55,25 @@ var get_variable_value = function (variable_definition, callback) {
             break;
 
         case constants.enums.decision_variable_types.STAT:
-            mongo_dal.ticks_dal.get_last_valid_stat(variable_definition.stat_id, function (stat) {
-                if (!stat) {
-                    callback(new Error('Stat not found.'));
+            mongo_dal.ticks_dal.get_last_valid_stat(variable_definition.stat_id, function (err, stat) {
+                if (err) {
+                    callback(err);
                 } else if (isNaN(stat.value)) {
                     callback(new Error('Stat value is not a number.'));
-                }
-                else {
+                } else {
                     callback(null, utils.round_number(stat.value));
                 }
             });
             break;
 
         case constants.enums.decision_variable_types.TRANSACTION:
+            mongo_dal.transactions_dal.get_last_transaction(variable_definition.transaction_running_mode ,function (err, transaction) {
+                if (err) {
+                    callback(err);
+                } else {
+                    callback(null, utils.round_number(transaction.param.rate));
+                }
+            });
             break;
     }
 };
