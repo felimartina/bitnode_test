@@ -56,13 +56,42 @@ module.exports = {
                 { '$limit': 1 }
             ];
             db.collection('ticks').aggregate(filter, {}, function (err, docs) {
-                var stat = null;
                 if (err) {
-                    logger.error('Cannot read stat. err: %s', err);
-                } else if (docs.length !== 0) {
-                    stat = docs[0];
+                    callback(new Error('Cannot read stat.'));
+                } else if (docs.length === 0) {
+                    callback(new Error('Stat not found'));
+                } else {
+                    callback(null, docs[0]);
                 }
-                if (callback) callback(stat);
+            });
+        }
+    },
+    transactions_dal: {
+        insert: function (transaction, callback) {
+            transaction.timestamp = Date.now();
+            db.collection('transactions').insert(transaction, function (err, doc) {
+                if (err) {
+                    logger.error('Cannot store current transaction. err: %s transaction:', err, transaction);
+                }
+                if (callback) callback(doc);
+            });
+        },
+        get_last_transaction: function (running_mode, callback) {
+            var filter_options = {
+                limit: 1,
+                sort: [['timestamp', 'desc']]
+            };
+            var filter = {
+                running_mode: running_mode
+            };
+            db.collection('transactions').aggregate(filter, filter_options, function (err, docs) {
+                if (err) {
+                    callback(new Error('Cannot read transaction.'));
+                } else if (docs.length === 0) {
+                    callback(new Error('Transaction not found'));
+                } else {
+                    callback(null, docs[0]);
+                }
             });
         }
     }

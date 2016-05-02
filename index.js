@@ -1,140 +1,88 @@
-// var program = require('commander');
-// var co = require('co');
-// var prompt = require('co-prompt');
-// var broker = require('./broker')('felimartina@outlook.com', '!Taekuondo9132?');
 var bit_driver = require('./uphold_driver');
 var ticker = require('./ticker');
 var logger = require('./logger');
 var constants = require('./constants');
 var config = require('./config');
 var decider = require('./decider');
+var running_settings = require('./running-settings');
+var mongo_dal = require('./mongo-dal');
 
-var tick_interval = 10000; //10 sec
-var stat_interval = 11000; //11 sec
-var single_stats_definitions = [
-    {
-        id: 1,
-        friendly_name: '',
-        name: constants.enums.stats.ASK
-    }, {
-        id: 2,
-        friendly_name: '',
-        name: constants.enums.stats.BID
-    }, {
-        id: 3,
-        friendly_name: '',
-        name: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 4,
-        friendly_name: '',
-        name: constants.enums.stats.RANGE
+var commited_transactions = [];
+var current_working_capital = running_settings.working_capital;
+bit_driver.init(config.user, config.pass, function (err) {
+    if (err) {
+        logger.error('Unable to start.');
+        logger.error(err);
+        return;
     }
-];
-var historical_stats_definitions = [
-    {
-        id: 5,
-        friendly_name: 'STDEV OF PRICE_AVG TAKING 20 LAST TICKS.',
-        name: constants.enums.stats.STDEV,
-        ticks_to_use: 20,
-        ticks_offset: 0,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 6,
-        friendly_name: '',
-        name: constants.enums.stats.STDEV,
-        ticks_to_use: 20,
-        ticks_offset: 20,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 7,
-        friendly_name: '',
-        name: constants.enums.stats.SMA,
-        ticks_to_use: 20,
-        ticks_offset: 0,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 8,
-        friendly_name: '',
-        name: constants.enums.stats.EMA,
-        ticks_to_use: 20,
-        ticks_offset: 0,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 9,
-        friendly_name: '',
-        name: constants.enums.stats.MIN,
-        ticks_to_use: 40,
-        ticks_offset: 0,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 10,
-        friendly_name: '',
-        name: constants.enums.stats.MAX,
-        ticks_to_use: 40,
-        ticks_offset: 0,
-        variable: constants.enums.stats.PRICE_AVG
-    }, {
-        id: 11,
-        friendly_name: '',
-        name: constants.enums.stats.SMA,
-        ticks_to_use: 10,
-        ticks_offset: 0,
-        variable: constants.enums.stats.RANGE
-    }, {
-        id: 12,
-        friendly_name: '',
-        name: constants.enums.stats.SMA,
-        ticks_to_use: 50,
-        ticks_offset: 0,
-        variable: constants.enums.stats.RANGE
-    }
-];
-var buy_conditions = [
-    {
-        variable1: {
-            type: constants.enums.decision_variable_types.STAT,
-            stat_id: 6
-        },
-        comparison: constants.enums.decision_condition_operands.GREATER,
-        variable2: {
-            type: constants.enums.decision_variable_types.SCALAR,
-            value: 0.5
+    //test uphold transactions
+    // bit_driver.sellBTC(10, function (err, commited_transaction) {
+    //     if (err) return logger.error(err);
+    //     commited_transactions.push(commited_transaction);
+    //     logger.info(commited_transaction);
+    // });
+    // bit_driver.buyBTC(1, function (err, commited_transaction) {
+    //     if (err) return logger.error(err);
+    //     commited_transactions.push(commited_transaction);
+    //     logger.info(commited_transaction);
+    // });
+    // bit_driver.placeSellBTCOrder(1, function (err, pending_transaction) {
+    //     if (err) return logger.error(err);
+    //     last_pending_transaction = pending_transaction;
+    //     logger.info(pending_transaction);
+    //     bit_driver.commitPendingTransaction(pending_transaction, function (err, commited_transaction) {
+    //         if (err) return logger.error(err);
+    //         commited_transactions.push(commited_transaction);
+    //         logger.info(commited_transaction);
+    //     });
+    // });
+    setInterval(function () {
+        ticker.tick(bit_driver, running_settings.single_stats_definitions, running_settings.historical_stats_definitions);
+    }, running_settings.tick_interval);
+
+    setInterval(function () {
+        switch (current_working_capital.currency) {
+            // we have BTC, then we have to sell them
+            case constants.enums.currencies.BTC:
+                decider.decide(running_settings.sell_conditions, function (conditions_met) {
+                    if (conditions_met) {
+                        bit_driver.sellBTC(current_working_capital, function (err, transaction) {
+                            if (err) return logger.error('Unable to sell BTC', err);
+                            transaction.running_mode = constants.enums.running_modes.SELL_BITCOINS;
+                            commited_transactions.push(transaction);
+                            logger.info('SOLD BTC', transaction);
+                            current_working_capital = {
+                                currency: constants.enums.currencies.USD,
+                                amount: parseFloat(transaction.destination.amount)
+                            };
+                            mongo_dal.transactions_dal.insert(transaction);
+                        });
+                    }
+                });
+                break;
+
+            // we have USD, then we have to buy BTC
+            case constants.enums.currencies.USD:
+                decider.decide(running_settings.buy_conditions, function (conditions_met) {
+                    if (conditions_met) {
+                        bit_driver.buyBTC(current_working_capital, function (err, transaction) {
+                            if (err) return logger.error('Unable to sell BTC', err);
+                            transaction.running_mode = constants.enums.running_modes.BUY_BITCOINS;
+                            commited_transactions.push(transaction);
+                            logger.info('BOUGHT BTC', transaction);
+                            current_working_capital = {
+                                currency: constants.enums.currencies.BTC,
+                                amount: parseFloat(transaction.destination.amount)
+                            };
+                            mongo_dal.transactions_dal.insert(transaction);
+                        });
+                    }
+                });
+                break;
+
+            default:
+                logger.error('Unrecognized running mode.');
+                return;
         }
-    }
-    // },
-    // {
-    //     variable1: {
-    //         type: constants.enums.decision_variable_types.TRANSACTION,
-    //         transaction_type: constants.enums.decision_transaction_types.SELL
-    //     },
-    //     comparison: constants.enums.decision_condition_operands.GREATER,
-    //     variable2: {
-    //         type: constants.enums.decision_variable_types.STAT,
-    //         stat_id: 1
-    //     }
-    // }
-];
-bit_driver.init(config.user, config.pass, function () {
-    setInterval(function () {
-        ticker.tick(bit_driver, single_stats_definitions, historical_stats_definitions);
-    }, tick_interval);
-    
-    setInterval(function () {
-        decider.decide(buy_conditions);
-    }, tick_interval * 2);
+    }, running_settings.tick_interval * 2);
 });
-// broker.run({ running_mode: broker.enum_running_mode.SELL_BITCOINS, step: 1 });
-// program
-//     .arguments('')
-//     // .option('-u, --username <username>', 'The user to authenticate as')
-//     // .option('-p, --password <password>', 'The user\'s password')
-//     .action(function (file) {
-//         co(function () {
-//             // var username = yield prompt('username:');
-//             // var password = yield prompt('password:');
-//             // console.log('user: %s pass: %s file: %s',
-//             //     file);
-//             // broker.start();
-//         });
-//     })
-//     .parse(process.argv);
